@@ -111,7 +111,7 @@ export const INITIAL_PRODUCTS: SkincareProduct[] = [
     reviewsCount: 188,
     skinTypeTags: ["Oily", "Acne-Prone", "Sensitive", "Combination"],
     concernTags: ["Redness", "Acne", "Secretion Calibration", "Irritation"],
-    imageUrl: "https://images.unsplash.com/photo-1626806787461-102c1bfaaea1?auto=format&fit=crop&q=80&w=400"
+    imageUrl: "https://images.unsplash.com/photo-1612817288484-6f916006741a?auto=format&fit=crop&q=80&w=400"
   },
   {
     id: "prod-4",
@@ -156,7 +156,7 @@ export const INITIAL_PRODUCTS: SkincareProduct[] = [
     reviewsCount: 172,
     skinTypeTags: ["Oily", "Acne-Prone", "Combination"],
     concernTags: ["Clogged Pores", "Acne", "Uneven Texture"],
-    imageUrl: "https://images.unsplash.com/photo-1556228453-efd6c1ff04f6?auto=format&fit=crop&q=80&w=400"
+    imageUrl: "https://images.unsplash.com/photo-1615397349754-cfa2066a298e?auto=format&fit=crop&q=80&w=400"
   },
   {
     id: "prod-7",

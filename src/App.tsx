@@ -9,6 +9,7 @@ import ProgressTracker from "./components/ProgressTracker";
 import SubscriptionBox from "./components/SubscriptionBox";
 import Chatbot from "./components/Chatbot";
 import AdminPanel from "./components/AdminPanel";
+import AuthModal, { UserProfile } from "./components/AuthModal";
 
 // Icons
 import {
@@ -35,7 +36,8 @@ import {
   CreditCard,
   Lock,
   Shield,
-  CheckCircle2
+  CheckCircle2,
+  User
 } from "lucide-react";
 
 export default function App() {
@@ -49,6 +51,31 @@ export default function App() {
 
   // Tab state
   const [activeTab, setActiveTab] = useState<"diagnostic" | "shop" | "subscriptions" | "telehealth" | "progress" | "importer">("diagnostic");
+
+  // User Profile Credentials
+  const [user, setUser] = useState<UserProfile | null>(() => {
+    const saved = localStorage.getItem("luxecare_user_profile");
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return null;
+  });
+  const [isAuthOpen, setIsAuthOpen] = useState(false);
+
+  // Synchronize user profile into checkout fields when logged in
+  useEffect(() => {
+    if (user) {
+      localStorage.setItem("luxecare_user_profile", JSON.stringify(user));
+      if (user.address) setShippingAddress(user.address);
+      if (user.city) setShippingCity(user.city);
+      if (user.zip) setShippingZip(user.zip);
+      if (user.name) setCardName(user.name);
+    } else {
+      localStorage.removeItem("luxecare_user_profile");
+    }
+  }, [user]);
   
   // Floating Chatbot Toggle
   const [isChatbotOpen, setIsChatbotOpen] = useState(false);
@@ -403,6 +430,30 @@ export default function App() {
                 ))}
               </select>
             </div>
+
+            {/* User Profile / Auth trigger button */}
+            <button
+              id="user-profile-header-btn"
+              onClick={() => setIsAuthOpen(true)}
+              className="flex items-center gap-1.5 bg-[#F9F7F2] hover:bg-stone-100 transition-all border border-[#E6E0D5] px-3.5 py-1.5 rounded-xl cursor-pointer text-xs font-bold text-[#2A3B2D] h-9"
+              title={user ? "View Custom Clearance Account" : "Sign In / Register"}
+            >
+              {user ? (
+                <>
+                  <div className="w-5 h-5 rounded-full bg-[#5A6D5D] text-white flex items-center justify-center text-[10px] uppercase font-bold shrink-0">
+                    {user.name.charAt(0)}
+                  </div>
+                  <span className="hidden sm:inline text-[11px] font-bold text-[#2A3B2D]">
+                    Hi, {user.name.split(" ")[0]}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <User className="w-3.5 h-3.5 text-[#5A6D5D]" />
+                  <span className="hidden sm:inline text-[11px] text-[#5A6D5D]">Sign In</span>
+                </>
+              )}
+            </button>
 
             {/* Shopping Cart Trigger */}
             <button
@@ -870,8 +921,24 @@ export default function App() {
                     
                     {/* Delivery Section */}
                     <div className="space-y-3 bg-white p-5 rounded-3xl border border-[#E6E0D5]">
-                      <p className="text-[11px] font-bold text-[#5A6D5D] tracking-wider uppercase flex items-center gap-1.5">
+                      <p className="text-[11px] font-bold text-[#5A6D5D] tracking-wider uppercase flex items-center justify-between gap-1.5 w-full">
                         <span>📍 Delivery Destination</span>
+                        {user ? (
+                          <span className="text-[9px] bg-emerald-50 text-emerald-800 px-2 py-0.5 rounded-full font-extrabold">
+                            ✓ LINKED: {user.name.split(" ")[0]}
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsCartOpen(false);
+                              setIsAuthOpen(true);
+                            }}
+                            className="text-[9px] text-[#5A6D5D] hover:underline hover:text-[#2A3B2D] font-extrabold cursor-pointer"
+                          >
+                            Sign In / Sign Up to Autofill
+                          </button>
+                        )}
                       </p>
                       
                       <div className="space-y-3.5">
@@ -1154,6 +1221,19 @@ export default function App() {
 
             </motion.div>
           </>
+        )}
+      </AnimatePresence>
+
+      {/* 6. Sign In/Up/Profile authentication modal */}
+      <AnimatePresence>
+        {isAuthOpen && (
+          <AuthModal
+            user={user}
+            onUpdateUser={setUser}
+            isOpen={isAuthOpen}
+            onClose={() => setIsAuthOpen(false)}
+            showToast={showToast}
+          />
         )}
       </AnimatePresence>
 
