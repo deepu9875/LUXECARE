@@ -1,0 +1,11 @@
+{
+  "name": "LUXECARE",
+  "description": "AI-Powered Korean Skincare Platform imported directly to India, featuring AI Skin & Hair Analysis, personalized skincare routines, dermatologist booking, subscription builder, and profit margin custom pricing dashboard.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
