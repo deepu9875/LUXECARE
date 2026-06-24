@@ -10,6 +10,9 @@ import SubscriptionBox from "./components/SubscriptionBox";
 import Chatbot from "./components/Chatbot";
 import AdminPanel from "./components/AdminPanel";
 import AuthModal, { UserProfile } from "./components/AuthModal";
+import { onAuthStateChanged } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
+import { auth, db } from "./lib/firebase";
 
 // Icons
 import {
@@ -76,6 +79,39 @@ export default function App() {
       localStorage.removeItem("luxecare_user_profile");
     }
   }, [user]);
+
+  // Listen to Firebase Auth state change to sync real-time database session
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        // Fetch fresh profile data from Firestore
+        const userDocRef = doc(db, "users", firebaseUser.uid);
+        try {
+          const userDoc = await getDoc(userDocRef);
+          if (userDoc.exists()) {
+            const data = userDoc.data();
+            setUser({
+              name: data.name || "User",
+              email: data.email || firebaseUser.email || "",
+              phone: data.phone || "",
+              address: data.address || "",
+              city: data.city || "",
+              zip: data.zip || "",
+              joinedDate: data.joinedDate || "June 2026",
+              avatarUrl: `https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=150`
+            });
+          }
+        } catch (error) {
+          console.error("Error reading profile on auth state change:", error);
+        }
+      } else {
+        // If logged out on Firebase, clear local state
+        setUser(null);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
   
   // Floating Chatbot Toggle
   const [isChatbotOpen, setIsChatbotOpen] = useState(false);
@@ -212,6 +248,12 @@ export default function App() {
 
   const simulateCheckoutProcessing = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!user) {
+      showToast("⚠️ Authentication Required: Please Sign In or Sign Up to purchase or inspect custom clearances.", "error");
+      setIsCartOpen(false);
+      setIsAuthOpen(true);
+      return;
+    }
     if (!shippingAddress.trim() || !shippingCity.trim() || !shippingZip.trim()) {
       showToast("⚠️ Please provide a valid Shipping Address.", "error");
       return;
@@ -663,6 +705,8 @@ export default function App() {
                 activeCurrency={activeCurrency}
                 formatCurrency={formatCurrency}
                 showToast={showToast}
+                isLoggedIn={!!user}
+                onPromptLogin={() => setIsAuthOpen(true)}
               />
             )}
 
@@ -1209,7 +1253,15 @@ export default function App() {
                     </span>
                   </div>
                   <button
-                    onClick={() => setCheckoutStep("CHECKOUT")}
+                    onClick={() => {
+                      if (!user) {
+                        showToast("⚠️ Authentication Required: Please Sign In or Create an Importer ID to complete your purchase and calculate seaport customs clearances.", "error");
+                        setIsCartOpen(false); // Close cart drawer so they can see input clearly or just show modal
+                        setIsAuthOpen(true);
+                      } else {
+                        setCheckoutStep("CHECKOUT");
+                      }
+                    }}
                     className="w-full py-3 text-xs bg-[#5A6D5D] hover:bg-[#4A5D4D] text-white font-extrabold rounded-full transition-all shadow-md text-center cursor-pointer flex items-center justify-center gap-1.5"
                   >
                     <span>Proceed to Cargo Clearance</span>

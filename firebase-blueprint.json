@@ -1,0 +1,46 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User account information for LuxeCare custom clearance",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The user's full name"
+        },
+        "email": {
+          "type": "string",
+          "description": "The user's email address"
+        },
+        "phone": {
+          "type": "string",
+          "description": "The user's contact number"
+        },
+        "address": {
+          "type": "string",
+          "description": "Delivery street address"
+        },
+        "city": {
+          "type": "string",
+          "description": "Delivery city and state"
+        },
+        "zip": {
+          "type": "string",
+          "description": "Delivery pin code"
+        },
+        "joinedDate": {
+          "type": "string",
+          "description": "Date when the user registered"
+        }
+      },
+      "required": ["name", "email", "phone", "address", "city", "zip"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Secure user-specific importer details and credentials"
+    }
+  }
+}

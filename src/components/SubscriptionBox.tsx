@@ -9,6 +9,8 @@ interface SubBoxProps {
   activeCurrency?: CurrencyUnit;
   formatCurrency?: (valInINR: number) => string;
   showToast?: (message: string, type?: "success" | "info" | "error") => void;
+  isLoggedIn?: boolean;
+  onPromptLogin?: () => void;
 }
 
 export default function SubscriptionBox({
@@ -17,7 +19,9 @@ export default function SubscriptionBox({
   onAddOrder,
   activeCurrency = { code: "INR", symbol: "₹", rateToINR: 1.0 },
   formatCurrency = (val: number) => `₹${val.toLocaleString()}`,
-  showToast = () => {}
+  showToast = () => {},
+  isLoggedIn = false,
+  onPromptLogin
 }: SubBoxProps) {
   const [boxTarget, setBoxTarget] = useState<"Glass Glow" | "Acne Calm" | "Dryness Repair" | "Age Defense">("Glass Glow");
   const [boxSize, setBoxSize] = useState<2 | 4 | 6>(4);
@@ -62,6 +66,12 @@ export default function SubscriptionBox({
   const subBoxINRPrice = finalSellingINR - subscriptionDiscount;
 
   const handleCreateSubscription = () => {
+    if (!isLoggedIn) {
+      showToast("⚠️ Authentication Required: Please Sign In or Sign Up to purchase premium subscription packages.", "error");
+      if (onPromptLogin) onPromptLogin();
+      return;
+    }
+
     setIsOrdering(true);
     setTimeout(() => {
       setIsOrdering(false);

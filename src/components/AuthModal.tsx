@@ -12,8 +12,16 @@ import {
   Save, 
   UserCheck, 
   ShieldCheck,
-  Globe
+  Globe,
+  Loader2
 } from "lucide-react";
+import { 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword, 
+  signOut
+} from "firebase/auth";
+import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
+import { auth, db, handleFirestoreError, OperationType } from "../lib/firebase";
 
 export interface UserProfile {
   name: string;
@@ -56,6 +64,7 @@ export default function AuthModal({
 
   // Edit Mode state
   const [isEditing, setIsEditing] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
   // Sync state if user changes/logs in
   React.useEffect(() => {
@@ -74,115 +83,214 @@ export default function AuthModal({
 
   if (!isOpen) return null;
 
-  const handleSignInSubmit = (e: React.FormEvent) => {
+  const handleSignInSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.trim() || !password.trim()) {
       showToast("⚠️ Please fill in all credentials.", "error");
       return;
     }
 
-    // Simulated login matching common user patterns or new registration
-    const formattedEmail = email.toLowerCase().trim();
-    
-    // Check if we registered this user in localStorage
-    const savedProfiles = JSON.parse(localStorage.getItem("luxecare_saved_registers") || "[]");
-    const accountMatch = savedProfiles.find((item: any) => item.email.toLowerCase() === formattedEmail);
+    setIsLoading(true);
+    try {
+      const userCredential = await signInWithEmailAndPassword(auth, email.toLowerCase().trim(), password);
+      const uid = userCredential.user.uid;
 
-    if (accountMatch) {
-      const activeUser: UserProfile = {
-        name: accountMatch.name,
-        email: accountMatch.email,
-        phone: accountMatch.phone,
-        address: accountMatch.address,
-        city: accountMatch.city,
-        zip: accountMatch.zip,
-        joinedDate: accountMatch.joinedDate || "June 2026",
-        avatarUrl: `https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=150`
-      };
+      // Read from Firestore
+      const userDocRef = doc(db, "users", uid);
+      let userDoc;
+      try {
+        userDoc = await getDoc(userDocRef);
+      } catch (fsErr) {
+        handleFirestoreError(fsErr, OperationType.GET, `users/${uid}`);
+      }
+
+      let activeUser: UserProfile;
+      if (userDoc && userDoc.exists()) {
+        const data = userDoc.data();
+        activeUser = {
+          name: data.name || "User",
+          email: data.email || userCredential.user.email || "",
+          phone: data.phone || "",
+          address: data.address || "",
+          city: data.city || "",
+          zip: data.zip || "",
+          joinedDate: data.joinedDate || "June 2026",
+          avatarUrl: `https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=150`
+        };
+      } else {
+        // Fallback/Guest account creation if document didn't exist for some reason
+        const defaultName = email.split("@")[0];
+        activeUser = {
+          name: defaultName.charAt(0).toUpperCase() + defaultName.slice(1),
+          email: email.toLowerCase().trim(),
+          phone: "+91 98765 43210",
+          address: "41, Rose Blossom Apt, Carter Road",
+          city: "Mumbai, MH",
+          zip: "400050",
+          joinedDate: "June 2026",
+          avatarUrl: `https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=150`
+        };
+        // Create in Firestore
+        try {
+          await setDoc(userDocRef, {
+            name: activeUser.name,
+            email: activeUser.email,
+            phone: activeUser.phone,
+            address: activeUser.address,
+            city: activeUser.city,
+            zip: activeUser.zip,
+            joinedDate: activeUser.joinedDate
+          });
+        } catch (fsErr) {
+          handleFirestoreError(fsErr, OperationType.WRITE, `users/${uid}`);
+        }
+      }
+
       onUpdateUser(activeUser);
-      showToast(`✨ Welcome back, ${activeUser.name}! Importer session authorized.`, "success");
+      showToast(`✨ Welcome back, ${activeUser.name}! Importer session authorized via Firebase.`, "success");
       onClose();
-    } else {
-      // Allow general demo fallback for easy grader/user sandbox interaction
-      const defaultName = formattedEmail.split("@")[0];
-      const demoUser: UserProfile = {
-        name: defaultName.charAt(0).toUpperCase() + defaultName.slice(1),
-        email: formattedEmail,
-        phone: "+91 98765 43210",
-        address: "41, Rose Blossom Apt, Carter Road",
-        city: "Mumbai, MH",
-        zip: "400050",
-        joinedDate: "June 2026",
-        avatarUrl: `https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=150`
-      };
-      onUpdateUser(demoUser);
-      showToast(`✨ Logged in successfully as developer guest: ${demoUser.name}.`, "success");
-      onClose();
+    } catch (err: any) {
+      console.error(err);
+      let errorMsg = "⚠️ Authentication failed. Please check your credentials.";
+      if (err.code === "auth/invalid-credential") {
+        errorMsg = "⚠️ Invalid credentials. Incorrect email or password.";
+      } else if (err.code === "auth/user-not-found") {
+        errorMsg = "⚠️ Account not found. Please Sign Up first.";
+      } else if (err.code === "auth/wrong-password") {
+        errorMsg = "⚠️ Incorrect password. Please try again.";
+      } else if (err.message) {
+        errorMsg = `⚠️ Error: ${err.message}`;
+      }
+      showToast(errorMsg, "error");
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const handleSignUpSubmit = (e: React.FormEvent) => {
+  const handleSignUpSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !email.trim() || !phone.trim() || !address.trim() || !city.trim() || !zip.trim()) {
+    if (!name.trim() || !email.trim() || !phone.trim() || !address.trim() || !city.trim() || !zip.trim() || !password.trim()) {
       showToast("⚠️ Please fill in all registration fields.", "error");
       return;
     }
 
-    const newUser: UserProfile = {
-      name: name.trim(),
-      email: email.toLowerCase().trim(),
-      phone: phone.trim(),
-      address: address.trim(),
-      city: city.trim(),
-      zip: zip.trim(),
-      joinedDate: new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" }),
-      avatarUrl: `https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=150`
-    };
+    setIsLoading(true);
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, email.toLowerCase().trim(), password);
+      const uid = userCredential.user.uid;
 
-    // Save registration mock database to persist sign-ins
-    const savedRegisters = JSON.parse(localStorage.getItem("luxecare_saved_registers") || "[]");
-    const updatedRegisters = savedRegisters.filter((u: any) => u.email.toLowerCase() !== newUser.email);
-    updatedRegisters.push({ ...newUser, password });
-    localStorage.setItem("luxecare_saved_registers", JSON.stringify(updatedRegisters));
+      const newUser: UserProfile = {
+        name: name.trim(),
+        email: email.toLowerCase().trim(),
+        phone: phone.trim(),
+        address: address.trim(),
+        city: city.trim(),
+        zip: zip.trim(),
+        joinedDate: new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" }),
+        avatarUrl: `https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=150`
+      };
 
-    // Update active state
-    onUpdateUser(newUser);
-    showToast(`🎉 Registration approved! Secure importer ID created for ${newUser.name}.`, "success");
-    onClose();
+      // Write to Firestore
+      try {
+        const userDocRef = doc(db, "users", uid);
+        await setDoc(userDocRef, {
+          name: newUser.name,
+          email: newUser.email,
+          phone: newUser.phone,
+          address: newUser.address,
+          city: newUser.city,
+          zip: newUser.zip,
+          joinedDate: newUser.joinedDate
+        });
+      } catch (fsErr) {
+        handleFirestoreError(fsErr, OperationType.WRITE, `users/${uid}`);
+      }
+
+      onUpdateUser(newUser);
+      showToast(`🎉 Registration approved! Secure importer ID created for ${newUser.name} on Firebase.`, "success");
+      onClose();
+    } catch (err: any) {
+      console.error(err);
+      let errorMsg = "⚠️ Sign Up failed. Please try again.";
+      if (err.code === "auth/email-already-in-use") {
+        errorMsg = "⚠️ Email already in use. Please choose a different email or sign in.";
+      } else if (err.code === "auth/weak-password") {
+        errorMsg = "⚠️ Weak password. Password should be at least 6 characters.";
+      } else if (err.message) {
+        errorMsg = `⚠️ Error: ${err.message}`;
+      }
+      showToast(errorMsg, "error");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleUpdateProfile = (e: React.FormEvent) => {
+  const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !phone.trim() || !address.trim() || !city.trim() || !zip.trim()) {
       showToast("⚠️ All fields are mandatory to clear Indian Maritime Customs.", "error");
       return;
     }
 
-    const updated: UserProfile = {
-      ...user,
-      name: name.trim(),
-      phone: phone.trim(),
-      address: address.trim(),
-      city: city.trim(),
-      zip: zip.trim(),
-    } as UserProfile;
+    setIsLoading(true);
+    try {
+      const currentUser = auth.currentUser;
+      if (currentUser) {
+        const uid = currentUser.uid;
+        try {
+          const userDocRef = doc(db, "users", uid);
+          await updateDoc(userDocRef, {
+            name: name.trim(),
+            phone: phone.trim(),
+            address: address.trim(),
+            city: city.trim(),
+            zip: zip.trim()
+          });
+        } catch (fsErr) {
+          handleFirestoreError(fsErr, OperationType.UPDATE, `users/${uid}`);
+        }
+      }
 
-    onUpdateUser(updated);
-    setIsEditing(false);
-    showToast("💾 Profile details updated in secure local database.", "success");
+      const updated: UserProfile = {
+        ...user,
+        name: name.trim(),
+        phone: phone.trim(),
+        address: address.trim(),
+        city: city.trim(),
+        zip: zip.trim(),
+      } as UserProfile;
+
+      onUpdateUser(updated);
+      setIsEditing(false);
+      showToast("💾 Profile details synchronized and saved in secure Cloud Database.", "success");
+    } catch (err: any) {
+      console.error(err);
+      showToast(`⚠️ Failed to update profile details: ${err.message || err}`, "error");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleSignOut = () => {
-    onUpdateUser(null);
-    showToast("🚪 Session terminated. Switched back to regional guest view.", "info");
-    setEmail("");
-    setPassword("");
-    setName("");
-    setPhone("");
-    setAddress("");
-    setCity("");
-    setZip("");
-    setMode("SIGN_IN");
+  const handleSignOut = async () => {
+    setIsLoading(true);
+    try {
+      await signOut(auth);
+      onUpdateUser(null);
+      showToast("🚪 Session terminated. Switched back to regional guest view.", "info");
+      setEmail("");
+      setPassword("");
+      setName("");
+      setPhone("");
+      setAddress("");
+      setCity("");
+      setZip("");
+      setMode("SIGN_IN");
+    } catch (err: any) {
+      console.error(err);
+      showToast("⚠️ Sign out failed. Please try again.", "error");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -298,9 +406,17 @@ export default function AuthModal({
 
               <button
                 type="submit"
-                className="w-full py-3 bg-[#5A6D5D] hover:bg-[#4A5D4D] text-white text-xs font-extrabold rounded-full transition-all cursor-pointer shadow-md mt-2"
+                disabled={isLoading}
+                className="w-full py-3 bg-[#5A6D5D] hover:bg-[#4A5D4D] text-white text-xs font-extrabold rounded-full transition-all cursor-pointer shadow-md mt-2 flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Sign In & Lock Tariff Rates
+                {isLoading ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Signing In...</span>
+                  </>
+                ) : (
+                  <span>Sign In & Lock Tariff Rates</span>
+                )}
               </button>
 
               <div className="text-center pt-2">
@@ -433,10 +549,15 @@ export default function AuthModal({
 
               <button
                 type="submit"
-                className="w-full py-3 bg-[#5A6D5D] hover:bg-[#4A5D4D] text-white text-xs font-extrabold rounded-full transition-all cursor-pointer shadow-md mt-2 flex items-center justify-center gap-1.5"
+                disabled={isLoading}
+                className="w-full py-3 bg-[#5A6D5D] hover:bg-[#4A5D4D] text-white text-xs font-extrabold rounded-full transition-all cursor-pointer shadow-md mt-2 flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <ShieldCheck className="w-4 h-4" />
-                <span>Agree & Sign Up</span>
+                {isLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <ShieldCheck className="w-4 h-4" />
+                )}
+                <span>{isLoading ? "Signing Up..." : "Agree & Sign Up"}</span>
               </button>
             </form>
           )}
@@ -532,10 +653,15 @@ export default function AuthModal({
                       </button>
                       <button
                         type="submit"
-                        className="flex-1 py-2 text-xs bg-[#5A6D5D] hover:bg-[#4A5D4D] text-white font-bold rounded-lg transition-all flex items-center justify-center gap-1"
+                        disabled={isLoading}
+                        className="flex-1 py-2 text-xs bg-[#5A6D5D] hover:bg-[#4A5D4D] text-white font-bold rounded-lg transition-all flex items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        <Save className="w-3.5 h-3.5" />
-                        Save Changes
+                        {isLoading ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Save className="w-3.5 h-3.5" />
+                        )}
+                        <span>{isLoading ? "Saving..." : "Save Changes"}</span>
                       </button>
                     </div>
                   </div>
