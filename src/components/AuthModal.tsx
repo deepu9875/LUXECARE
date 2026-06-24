@@ -18,7 +18,8 @@ import {
 import { 
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword, 
-  signOut
+  signOut,
+  sendPasswordResetEmail
 } from "firebase/auth";
 import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
 import { auth, db, handleFirestoreError, OperationType } from "../lib/firebase";
@@ -66,6 +67,17 @@ export default function AuthModal({
   const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
+  // Authentication feedback status state
+  const [authStatus, setAuthStatus] = useState<{
+    type: "success" | "error" | "warning" | null;
+    message: string;
+  } | null>(null);
+
+  // Clear authStatus when changing authentication modes
+  React.useEffect(() => {
+    setAuthStatus(null);
+  }, [mode]);
+
   // Sync state if user changes/logs in
   React.useEffect(() => {
     if (user) {
@@ -79,6 +91,7 @@ export default function AuthModal({
     } else {
       setMode("SIGN_IN");
     }
+    setAuthStatus(null);
   }, [user]);
 
   if (!isOpen) return null;
@@ -86,11 +99,15 @@ export default function AuthModal({
   const handleSignInSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.trim() || !password.trim()) {
-      showToast("⚠️ Please fill in all credentials.", "error");
+      setAuthStatus({
+        type: "warning",
+        message: "⚠ Please fill in all credentials."
+      });
       return;
     }
 
     setIsLoading(true);
+    setAuthStatus(null);
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email.toLowerCase().trim(), password);
       const uid = userCredential.user.uid;
@@ -147,20 +164,30 @@ export default function AuthModal({
       }
 
       onUpdateUser(activeUser);
+      setAuthStatus({
+        type: "success",
+        message: "✔ Logged in successfully. Redirecting to dashboard..."
+      });
       showToast(`✨ Welcome back, ${activeUser.name}! Importer session authorized via Firebase.`, "success");
-      onClose();
+      setTimeout(() => {
+        onClose();
+      }, 1500);
     } catch (err: any) {
       console.error(err);
-      let errorMsg = "⚠️ Authentication failed. Please check your credentials.";
-      if (err.code === "auth/invalid-credential") {
-        errorMsg = "⚠️ Invalid credentials. Incorrect email or password.";
-      } else if (err.code === "auth/user-not-found") {
-        errorMsg = "⚠️ Account not found. Please Sign Up first.";
-      } else if (err.code === "auth/wrong-password") {
-        errorMsg = "⚠️ Incorrect password. Please try again.";
+      let errorMsg = "✖ Authentication failed. Please check your credentials.";
+      if (err.code === "auth/invalid-credential" || err.code === "auth/wrong-password" || err.code === "auth/user-not-found") {
+        errorMsg = "✖ Invalid email or password. Please try again.";
+      } else if (err.code === "auth/invalid-email") {
+        errorMsg = "✖ Invalid email format. Please check and try again.";
+      } else if (err.code === "auth/network-request-failed") {
+        errorMsg = "✖ Network error. Please check your internet connection.";
       } else if (err.message) {
-        errorMsg = `⚠️ Error: ${err.message}`;
+        errorMsg = `✖ Error: ${err.message}`;
       }
+      setAuthStatus({
+        type: "error",
+        message: errorMsg
+      });
       showToast(errorMsg, "error");
     } finally {
       setIsLoading(false);
@@ -170,11 +197,15 @@ export default function AuthModal({
   const handleSignUpSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !email.trim() || !phone.trim() || !address.trim() || !city.trim() || !zip.trim() || !password.trim()) {
-      showToast("⚠️ Please fill in all registration fields.", "error");
+      setAuthStatus({
+        type: "warning",
+        message: "⚠ Please fill in all registration fields."
+      });
       return;
     }
 
     setIsLoading(true);
+    setAuthStatus(null);
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email.toLowerCase().trim(), password);
       const uid = userCredential.user.uid;
@@ -207,18 +238,70 @@ export default function AuthModal({
       }
 
       onUpdateUser(newUser);
+      setAuthStatus({
+        type: "success",
+        message: "✔ Account created successfully. Redirecting to dashboard..."
+      });
       showToast(`🎉 Registration approved! Secure importer ID created for ${newUser.name} on Firebase.`, "success");
-      onClose();
+      setTimeout(() => {
+        onClose();
+      }, 1500);
     } catch (err: any) {
       console.error(err);
-      let errorMsg = "⚠️ Sign Up failed. Please try again.";
+      let errorMsg = "✖ Sign Up failed. Please try again.";
       if (err.code === "auth/email-already-in-use") {
-        errorMsg = "⚠️ Email already in use. Please choose a different email or sign in.";
+        errorMsg = "✖ Email already exists. Please choose a different email or sign in.";
       } else if (err.code === "auth/weak-password") {
-        errorMsg = "⚠️ Weak password. Password should be at least 6 characters.";
+        errorMsg = "✖ Weak password. Password should be at least 6 characters.";
+      } else if (err.code === "auth/invalid-email") {
+        errorMsg = "✖ Invalid email format. Please check and try again.";
+      } else if (err.code === "auth/network-request-failed") {
+        errorMsg = "✖ Network error. Please check your internet connection.";
       } else if (err.message) {
-        errorMsg = `⚠️ Error: ${err.message}`;
+        errorMsg = `✖ Error: ${err.message}`;
       }
+      setAuthStatus({
+        type: "error",
+        message: errorMsg
+      });
+      showToast(errorMsg, "error");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    if (!email.trim()) {
+      setAuthStatus({
+        type: "warning",
+        message: "⚠ Please enter your registered email address first to reset your password."
+      });
+      return;
+    }
+
+    setIsLoading(true);
+    setAuthStatus(null);
+    try {
+      await sendPasswordResetEmail(auth, email.toLowerCase().trim());
+      setAuthStatus({
+        type: "success",
+        message: "✔ Password reset email is sent successfully. Please check your inbox."
+      });
+      showToast("✉ Password reset email has been sent.", "success");
+    } catch (err: any) {
+      console.error(err);
+      let errorMsg = "✖ Failed to send password reset email. Please verify the email address.";
+      if (err.code === "auth/user-not-found") {
+        errorMsg = "✖ User not found. No account is registered with this email.";
+      } else if (err.code === "auth/invalid-email") {
+        errorMsg = "✖ Invalid email format. Please check and try again.";
+      } else if (err.message) {
+        errorMsg = `✖ Error: ${err.message}`;
+      }
+      setAuthStatus({
+        type: "error",
+        message: errorMsg
+      });
       showToast(errorMsg, "error");
     } finally {
       setIsLoading(false);
@@ -371,6 +454,39 @@ export default function AuthModal({
         {/* Scrollable Container */}
         <div className="p-6 max-h-[70vh] overflow-y-auto space-y-4">
 
+          {/* Inline Alert/Status Message Section */}
+          {authStatus && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className={`p-4 rounded-2xl border text-xs font-semibold flex items-start gap-3 shadow-xs relative overflow-hidden transition-all duration-300 ${
+                authStatus.type === "success"
+                  ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+                  : authStatus.type === "error"
+                  ? "bg-red-50 border-red-200 text-red-800"
+                  : "bg-amber-50 border-amber-200 text-amber-800"
+              }`}
+            >
+              <div className="shrink-0 text-sm mt-0.5">
+                {authStatus.type === "success" && "✔"}
+                {authStatus.type === "error" && "✖"}
+                {authStatus.type === "warning" && "⚠"}
+              </div>
+              <div className="flex-1 pr-4">
+                <p className="leading-relaxed whitespace-pre-line">{authStatus.message}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAuthStatus(null)}
+                className="absolute top-3 right-3 text-stone-400 hover:text-stone-700 cursor-pointer text-[11px] font-bold"
+                title="Dismiss message"
+              >
+                ✕
+              </button>
+            </motion.div>
+          )}
+
           {/* MODE 1: Sign In form */}
           {mode === "SIGN_IN" && (
             <form onSubmit={handleSignInSubmit} className="space-y-4" id="signin-form">
@@ -401,6 +517,15 @@ export default function AuthModal({
                     className="w-full text-xs p-3 pl-10 bg-white border border-[#E6E0D5] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#5A6D5D] text-stone-800"
                   />
                   <Lock className="w-4 h-4 text-stone-400 absolute left-3 top-3.5" />
+                </div>
+                <div className="flex justify-end pt-1">
+                  <button
+                    type="button"
+                    onClick={handleForgotPassword}
+                    className="text-[10px] text-[#5A6D5D] hover:underline font-bold cursor-pointer"
+                  >
+                    Forgot Password?
+                  </button>
                 </div>
               </div>
 
